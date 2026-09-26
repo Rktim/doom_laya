@@ -1,0 +1,129 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>doom_laya</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --bg:#0e1116; --card:#171b22; --fg:#e6e9ef; --dim:#8a93a3; --lo:#3b82f6; --mid:#f5a524; --hi:#ef4444; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui,sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns:1fr 1fr; }
+  @media (max-width:760px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border-radius:12px; padding:16px; }
+  h1 { grid-column:1/-1; margin:0; font-size:20px; } h1 span { color:var(--dim); font-weight:400; }
+  h2 { margin:0 0 8px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  #frame { width:100%; image-rendering:pixelated; border-radius:8px; display:block; background:#000; aspect-ratio:4/3; }
+  .stats { display:flex; gap:16px; margin-top:12px; } .stats div { flex:1; text-align:center; }
+  .stats b { display:block; font-size:28px; font-variant-numeric:tabular-nums; }
+  .stats small { color:var(--dim); }
+  svg { width:100%; display:block; }
+  #needle { transform-origin:100px 100px; }
+  #pct { font:700 26px system-ui; fill:var(--fg); text-anchor:middle; font-variant-numeric:tabular-nums; }
+  .bar { display:grid; grid-template-columns:90px 1fr 48px; gap:8px; align-items:center; margin:8px 0; }
+  .bar .t { background:#232936; border-radius:6px; height:14px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--lo); }
+  .bar.win i { background:var(--mid); } .bar span:last-child { text-align:right; font-variant-numeric:tabular-nums; }
+  #text { font-family:ui-monospace,monospace; color:var(--dim); margin:0 0 4px; }
+  #act { font-size:32px; font-weight:700; text-transform:uppercase; }
+  select, button { font:inherit; color:var(--fg); background:#232936; border:1px solid #2f3747; border-radius:8px; padding:6px 12px; }
+  button { background:var(--lo); border-color:var(--lo); cursor:pointer; } button:disabled { opacity:.4; cursor:default; }
+  #log { font:13px ui-monospace,monospace; color:var(--dim); margin:0; padding:0; list-style:none; }
+  #log li { display:flex; justify-content:space-between; }
+</style>
+<main>
+  <h1>doom_laya <span>· Laya deciding live</span></h1>
+  <div class="card" style="grid-column:1/-1;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <label for="pick">Episode</label>
+    <select id="pick"></select>
+    <button id="play">Start</button>
+    <button id="stop" style="background:var(--hi);border-color:var(--hi)">Stop</button>
+    <span id="ep" style="color:var(--dim)">connecting…</span>
+  </div>
+
+  <section class="card">
+    <h2>Game</h2>
+    <img id="frame" alt="game frame">
+    <div class="stats">
+      <div><b id="kills">0</b><small>kills</small></div>
+      <div><b id="health">–</b><small>health</small></div>
+      <div><b id="ammo">–</b><small>ammo</small></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Confidence</h2>
+    <svg viewBox="0 0 200 142" aria-label="confidence rev meter">
+      <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#232936" stroke-width="14" stroke-linecap="round"/>
+      <path id="fill" d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="var(--lo)" stroke-width="14" stroke-linecap="round"
+            pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/>
+      <g id="needle"><line x1="100" y1="100" x2="100" y2="34" stroke="var(--fg)" stroke-width="3" stroke-linecap="round"/></g>
+      <circle cx="100" cy="100" r="6" fill="var(--fg)"/>
+      <text id="pct" x="100" y="138">–</text>
+    </svg>
+    <p id="text">waiting for Laya…</p>
+    <div id="act">–</div>
+    <div id="bars">
+      <div class="bar" data-k="shoot"><span>shoot</span><div class="t"><i></i></div><span>–</span></div>
+      <div class="bar" data-k="turn_left"><span>turn left</span><div class="t"><i></i></div><span>–</span></div>
+      <div class="bar" data-k="turn_right"><span>turn right</span><div class="t"><i></i></div><span>–</span></div>
+    </div>
+  </section>
+
+  <section class="card" style="grid-column:1/-1">
+    <h2>Recent decisions</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let lastKey = null;
+const log = [];
+
+function color(c) { return c > .8 ? "var(--hi)" : c > .5 ? "var(--mid)" : "var(--lo)"; }
+
+$("play").onclick = () => fetch("/play?ep=" + $("pick").value, { method: "POST" });
+$("stop").onclick = () => fetch("/stop", { method: "POST" });
+
+function render(s) {
+  $("frame").src = "data:image/jpeg;base64," + s.frame;
+  $("kills").textContent = s.kills; $("health").textContent = s.health; $("ammo").textContent = s.ammo;
+  $("text").textContent = s.text || "";
+  $("act").textContent = s.action.replace("_", " ");
+  const c = s.conf;
+  if (c != null) {
+    $("fill").style.strokeDashoffset = 100 - c * 100;
+    $("fill").style.stroke = color(c);
+    $("needle").style.transform = `rotate(${-90 + c * 180}deg)`;
+    $("pct").textContent = Math.round(c * 100) + "%";
+  }
+  document.querySelectorAll(".bar").forEach(b => {
+    const p = s.probs ? s.probs[b.dataset.k] : null;
+    b.querySelector("i").style.width = p == null ? 0 : p * 100 + "%";
+    b.lastElementChild.textContent = p == null ? "–" : Math.round(p * 100) + "%";
+    b.classList.toggle("win", b.dataset.k === s.action);
+  });
+  log.unshift(`<li><span>#${s.tic} ${s.text || ""}</span><span>${s.action} ${c != null ? Math.round(c * 100) + "%" : ""}</span></li>`);
+  log.length = Math.min(log.length, 8);
+  $("log").innerHTML = log.join("");
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch("/state")).json();
+    if (!$("pick").options.length) {
+      for (let i = 1; i <= s.n; i++) $("pick").add(new Option("Episode " + i, i));
+    }
+    $("play").disabled = $("pick").disabled = s.status === "playing";
+    $("stop").disabled = s.status !== "playing";
+    $("ep").textContent = s.status === "idle" ? "pick an episode and press Start"
+      : s.status === "stopped" ? `episode ${s.episode} stopped at decision ${s.tic}: ${s.kills} kills`
+      : s.status === "playing" ? `episode ${s.episode} · decision ${s.tic ?? 0}`
+      : `episode ${s.episode} finished: ${s.kills} kills`;
+    const key = s.run + ":" + s.tic;
+    if (s.frame && key !== lastKey) {
+      if (!lastKey || lastKey.split(":")[0] !== String(s.run)) { log.length = 0; }
+      lastKey = key; render(s);
+    }
+  } catch (e) { $("ep").textContent = "disconnected"; }
+  setTimeout(poll, 60);
+}
+poll();
+</script>
