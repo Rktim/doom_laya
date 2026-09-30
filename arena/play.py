@@ -13,7 +13,7 @@ import random
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
+import laya
 import vizdoom as vzd
 
 CFG = os.path.join(os.path.dirname(vzd.__file__), "scenarios", "defend_the_center.cfg")
@@ -99,7 +99,7 @@ def jpeg_b64(state):
 
 
 def make_laya():
-    import laya
+
     agent = laya.load("convaiinnovations/laya")
 
     def policy(state, width):
